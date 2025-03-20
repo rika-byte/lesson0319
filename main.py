@@ -1,78 +1,73 @@
-import streamlit as st # フロントエンドを扱うstreamlitの機能をインポート
-import time # 時間を扱う機能をインポート
+import requests
+import pandas as pd
 
-st.title("streamlitの基礎") # タイトルが出力される
-st.write("hello world") # hello worldが出力される
+REQUEST_URL = "https://app.rakuten.co.jp/services/api/Travel/SimpleHotelSearch/20170426"
+APP_ID = "1051925217941905423"
 
-# レイアウトとして２列を定義
-col1, col2 = st.columns(2)
+# パラメータ設定
+params = {
+    'format':'json',
+    'largeClassCode': 'japan',
+    'middleClassCode': 'okinawa',
+    'smallClassCode': 'nahashi',
+    'applicationId': APP_ID    
+}
 
-# 1列目をwithで囲む
-with col1:
-    st.write("列1がここに表示されます")
+# requestsのgetメソッドを使ってアクセス
+# その結果をresに代入します。
+res = requests.get(REQUEST_URL, params=params)
 
-# 2列目をwithで囲む
-with col2:
-    st.write("列2がここに表示されます")
+# 欲しいデータはresのjsonに格納されているので、res.json()をresultに代入しておきましょう。
+result = res.json()
+# これでAPIで取得したデータはresultに代入されます。
 
+# ホテル情報のリストを取得
+hotels = result.get("hotels", [])
 
+# 必要な情報を抽出してリストに格納
+hotel_list = []
+for hotel in hotels:
+    info = hotel["hotel"][0]["hotelBasicInfo"]
+    hotel_list.append({
+        "hotel_name": info["hotelName"],
+        "address": info["address1"] + info["address2"],
+        "review_score": info.get("reviewAverage", None),  # 評価点（ない場合はNone）
+        "review_count": info.get("reviewCount", 0),  # レビュー数（ない場合は0）
+        "min_price": info.get("hotelMinCharge", None)  # 最低価格（ない場合はNone）
+    })
 
-st.sidebar.write("hello world") #.sidebar付けるとサイトバーに出力されます。
-st.text_input("ここに文字が入力できます。") # テキストを入力できます。
+# Pandasのデータフレームに変換
+df = pd.DataFrame(hotel_list)
 
-slider_text = st.slider("スライダーで数字を決定できます。",0,100,5) # (最小、最大値、デフォルト値)の順で設定されます。
-"スライダーの数字:",slider_text
+# データの確認
+print(df.head())
 
-st.button("ボタン") # ボタンが設置されます。
+import plotly.express as px
 
-x = st.empty() # 文字が出力される場所をあらかじめ確保します。その場所をxとしています。
-bar = st.progress(0) # 進捗0のプログレスバーを出力します。
+# レビュー数が多い順に並べる
+df_sorted = df.sort_values(by="review_count", ascending=False).head(10)
 
-# iに0から99まで代入しながら実行されます
-for i in range(100):
-    time.sleep(0.1) # 0.1秒待機します。
-    x.text(i) # 確保した場所xに代入されたiの値を代入します。
-    bar.progress(i) # 進捗iに変更します。
-    i += 1 # iに1足し算して代入します。
+# グラフ作成
+fig = px.bar(df_sorted, x="hotel_name", y="review_count", 
+             title="レビュー数が多いホテル", text="review_count")
 
-# 選択肢を配列で指定して選択肢を出力します。
-st.selectbox("選んでください。",["選択肢1","選択肢2","選択肢3"])
+# グラフを表示
+fig.show()
 
+import streamlit as st
 
+st.title("楽天トラベル ホテル検索ダッシュボード")
 
-# ダウンロードする文字を定義し、output_textに代入します。
-output_text = "この文字がダウンロードされます"
+# ユーザーが選択できるセレクトボックス
+selected_hotel = st.selectbox("ホテルを選択してください", df["hotel_name"])
 
- # 代入された文字をダウンロードするボタンを設置。オプションは内容をdataに指定、ファイル名をfile_nameに指定、ファイルタイプをmimeに指定
-st.download_button(label='記事内容 Download', 
-                   data=output_text, 
-                   file_name='out_put.txt',
-                   mime='text/plain',
-                   )
+# 選択されたホテルのデータを取得
+selected_data = df[df["hotel_name"] == selected_hotel]
 
+# ホテル情報を表示
+st.write("### ホテル情報")
+st.dataframe(selected_data)
 
-# ファイルアップローダーを設置します。typeでアップロードできるファイルの種類を指定できます。
-file_upload = st.file_uploader("ここに音声認識したファイルをアップロードしてください。",type=["png","jpg"])
-
-# ファイルがアップロードされた時にその画像を表示します。
-if (file_upload !=None):
-    st.image(file_upload)# 画像を表示します。
-
-
-
-import numpy as np # 数列を扱う機能をインポート
-import pandas as pd # データフレームを扱う機能をインポート
-
-# 乱数の配列を作るメソッドを作ります。引数r,cとし、それぞれおのデフォルト値を10と5に設定します。
-def rand_df(r=10, c=5):
-    df = pd.DataFrame(
-        np.random.randn(r, c),
-        columns=('col %d' % i for i in range(c)))# 乱数10の５個の数列を作ります。カラムの設定は0-4の名前を付けます。
-    return df # 作ったデータフレームを返します。
-
-dataframe = rand_df(r=10,c=3) # rに10、cに3を代入したrand_dfメソッドを処理します。
-
-# 表の描画します。
-st.dataframe(dataframe.head(n=3))
-# データフレームのチャートの描画します。
-st.line_chart(dataframe)
+# グラフを表示
+st.write("### ホテルのレビュー数ランキング")
+st.plotly_chart(fig)
